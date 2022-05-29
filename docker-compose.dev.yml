@@ -1,0 +1,31 @@
+#version: '3.9.1'
+
+services:
+  web:
+    build: .
+    command: python /src/manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./:/src
+    ports:
+      - 8000:8000
+  ui:
+    build: ./ui
+    command: npm start
+    volumes:
+      - .ui/:/app
+    ports:
+      - 3000:3000
+    depends_on:
+      - web
+  db:
+    image: postgres:14.1-alpine3.15
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=dbadmin
+      - POSTGRES_PASSWORD=dbadmin
+      - POSTGRES_DB=minerva
+volumes:
+  postgres_data:

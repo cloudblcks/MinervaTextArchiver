@@ -88,10 +88,10 @@ WSGI_APPLICATION = 'minerva.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql_psycopg2',
-        'NAME': 'postgres',
-        'USER': 'postgres',
-        'PASSWORD': 'Password1',
-        'HOST': 'localhost',
+        'NAME': 'minerva',
+        'USER': 'dbadmin',
+        'PASSWORD': 'dbadmin',
+        'HOST': 'db',
         'PORT': 5432,
     }
 }
@@ -141,7 +141,7 @@ USE_TZ = True
 
 CORS_ORIGIN_ALLOW_ALL = True
 
-SITE_URL = 'http://vmedu213.mtacloud.co.il'
+# SITE_URL = 'http://vmedu213.mtacloud.co.il'
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/3.0/howto/static-files/
@@ -192,9 +192,12 @@ LOGGING = {
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
 
+if os.getenv('DEBUG'):
+    DEBUG = True
+
 try:
     from .local_settings import *
 except ImportError:
     pass
 
-django.setup()
+# django.setup()

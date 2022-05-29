@@ -14,9 +14,11 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
+from django.conf.urls.static import static
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenVerifyView
 
+from minerva import settings
 from minerva.webapp.views import DiscussionStatsView, AppGroupStatsView, DiscussionMessagesView, DiscussionSummaryView, \
     UserHashtagsView, UserRegisterView, UserAddAppView, UserDetailsView
 
@@ -35,4 +37,4 @@ urlpatterns = [
     path('account/details', UserDetailsView.as_view(), name='user_details'),
     path('account/register/<user_uid>/<token>', UserRegisterView.as_view(), name='register_user'),
     path('account/add_app/<user_uid>/<token>/<app_id>/<app_user_uid>', UserAddAppView.as_view(), name='add_user_app'),
-]
+] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
