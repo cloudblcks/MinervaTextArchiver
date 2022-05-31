@@ -1,13 +1,31 @@
 #version: '3.9.1'
 
 services:
-  web:
-    build: .
-    command: python /src/manage.py runserver 0.0.0.0:8000
-    volumes:
-      - ./:/src
+  nginx:
+#    build: nginx
+#    command: nginx
+    image: nginx:latest
     ports:
       - 8000:8000
+    volumes:
+      - ./nginx/minerva.conf:/etc/nginx/nginx.conf
+      - ./src/static:/src/static
+      - ./src/media:/src/media
+    depends_on:
+      - web
+    networks:
+      - nginx_network
+  web:
+    build: src
+    command: gunicorn minerva.wsgi -b 0.0.0.0:8000
+    volumes:
+      - ./src/:/src/
+      - static_volume:/src/static
+      - media_volume:/src/media
+    ports:
+      - 8000
+    networks:
+      - nginx_network
   ui:
     build: ./ui
     command: npm start
@@ -29,3 +47,9 @@ services:
       - POSTGRES_DB=minerva
 volumes:
   postgres_data:
+  static_volume:
+  media_volume:
+
+networks:
+  nginx_network:
+    driver: bridge

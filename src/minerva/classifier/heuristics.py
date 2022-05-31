@@ -1,5 +1,4 @@
 from abc import ABC
-from collections import namedtuple
 from typing import List
 
 from minerva.classifier.models import ClassificationResult

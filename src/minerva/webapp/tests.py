@@ -1,10 +1,9 @@
-import asyncio
 from datetime import datetime
 
 import pytz
 from django.test import TestCase
 from rest_framework.reverse import reverse
-from rest_framework.test import APIClient, APIRequestFactory
+from rest_framework.test import APIClient
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import AccessToken
 

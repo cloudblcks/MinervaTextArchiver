@@ -1,0 +1,17 @@
+version: '3.9.1'
+
+services:
+  web-prod:
+    build:
+      context: ./src
+      dockerfile: ./Dockerfile.prod
+    command: gunicorn wsgi:application -c /.gunicorn.conf.py
+    expose:
+      - 8000
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - web-prod
