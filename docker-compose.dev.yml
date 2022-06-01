@@ -2,8 +2,6 @@
 
 services:
   nginx:
-#    build: nginx
-#    command: nginx
     image: nginx:latest
     ports:
       - 8000:8000
