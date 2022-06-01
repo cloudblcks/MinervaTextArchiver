@@ -30,7 +30,7 @@ services:
     build: ./ui
     command: npm start
     volumes:
-      - .ui/:/app
+      - .:/app
     ports:
       - 3000:3000
     depends_on:
