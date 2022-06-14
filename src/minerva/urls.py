@@ -15,7 +15,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.conf.urls.static import static
-from django.urls import path
+from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenVerifyView
 
 from minerva import settings
@@ -23,6 +23,8 @@ from minerva.webapp.views import DiscussionStatsView, AppGroupStatsView, Discuss
     UserHashtagsView, UserRegisterView, UserAddAppView, UserDetailsView
 
 urlpatterns = [
+    path("-/", include("django_alive.urls")),
+
     path('admin/', admin.site.urls),
 
     path('webapp/discussions/stats', DiscussionStatsView.as_view(), name='discussion_stats'),
