@@ -17,7 +17,8 @@ WORKDIR /src
 
 RUN apt-get update \
    && apt-get -y install libffi-dev libpq-dev gcc python3-dev musl-dev vim less \
-   && pip install "pip==$PIP_VERSION" --upgrade
+   && pip install "pip==$PIP_VERSION" --upgrade \
+   && apt-get clean
 
 
 # Copy requirements to the container
@@ -26,10 +27,7 @@ COPY requirements.txt /src/
 RUN pip install -r /src/requirements.txt
 
 # Copy the project files into the working directory
-COPY manage.py /src/
-COPY minerva/ /src/minerva/
+COPY . /src/
 
-RUN python /src/manage.py collectstatic
-
-# Open a port on the container
+RUN python /src/manage.py collectstatic --no-input
 EXPOSE 8000
