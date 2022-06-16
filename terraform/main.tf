@@ -18,7 +18,7 @@ variable "domain_name" {
 
 variable "common_tags" {
   description = "Common tags you want applied to all components."
-  default     = {
+  default = {
     Project = "Minerva / Cloudblocks deployment test"
   }
 }
@@ -63,7 +63,32 @@ variable "health_check_path" {
 }
 
 ###############
-#RDS
+# S3
+###############
+variable "react_bucket_name" {
+  description = "Bucket name for frontend in AWS S3"
+  default     = "minerva-demo.cloudblocks.dev"
+}
+
+variable "web_index_document" {
+  description = "The name of the index document"
+  default     = "index.html"
+}
+
+variable "web_error_document" {
+  description = "The name of the error document"
+  default     = "index.html"
+}
+
+variable "web_path" {
+  type        = string
+  description = "The path to the static website folder"
+  default     = "../ui/public"
+}
+
+
+###############
+# RDS
 ###############
 variable "rds_db_name" {
   description = "RDS database name"
@@ -80,6 +105,7 @@ variable "rds_instance_class" {
   description = "RDS instance type"
   default     = "db.t4g.large"
 }
+
 ###############
 # ECS
 ###############
@@ -89,7 +115,7 @@ variable "ecs_cluster_name" {
 }
 variable "amis" {
   description = "Which AMI to spawn."
-  default     = {
+  default = {
     eu-west-1 = "ami-029574c9b0349a8a7"
   }
 }
@@ -97,7 +123,7 @@ variable "instance_type" {
   default = "t2.micro"
 }
 variable "docker_image_url_django" {
-  description = "Docker image to run in the ECS cluster"
+  description = "Main docker image to run in the ECS cluster"
   default     = "808221725440.dkr.ecr.eu-west-1.amazonaws.com/minerva:latest"
 }
 variable "app_count" {
@@ -105,8 +131,12 @@ variable "app_count" {
   default     = 2
 }
 variable "docker_image_url_nginx" {
-  description = "Docker image to run in the ECS cluster"
+  description = "Nginx docker image to run in the ECS cluster"
   default     = "808221725440.dkr.ecr.eu-west-1.amazonaws.com/minerva-nginx:latest"
+}
+variable "docker_image_url_react" {
+  description = "React docker image to run in the ECS cluster"
+  default     = "808221725440.dkr.ecr.eu-west-1.amazonaws.com/minerva-react:latest"
 }
 
 variable "allowed_hosts" {
@@ -223,6 +253,22 @@ resource "null_resource" "ecr_nginx_image" {
        EOF
   }
 }
+
+#resource "null_resource" "react_ui_upload" {
+#  triggers = {
+#    python_file = sha1(join("", [for f in fileset(path.module, "../ui/**") : filesha1(f)]))
+#  }
+#
+#  provisioner "local-exec" {
+#    command = <<EOF
+#           aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin ${local.account_id}.dkr.ecr.${var.region}.amazonaws.com
+#           cd ${path.module}/../ui
+#           npm install
+#           yarn build
+#           aws --region ${var.region} s3 cp --recursive ./public/ s3://${var.react_bucket_name}
+#       EOF
+#  }
+#}
 
 ######################################
 # Resources
@@ -449,6 +495,40 @@ resource "aws_alb_listener" "ecs-alb-http-listener" {
 ######
 # IAM
 ######
+resource "aws_s3_bucket_policy" "root_s3_bucket_policy" {
+  bucket = aws_s3_bucket.root_react_bucket.id
+  policy = <<EOT
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "PublicReadGetObject",
+                  "Effect": "Allow",
+                  "Principal": "*",
+                  "Action": "s3:GetObject",
+                  "Resource": "${aws_s3_bucket.root_react_bucket.arn}/*"
+                }
+              ]
+            }
+EOT
+}
+resource "aws_s3_bucket_policy" "www_s3_bucket_policy" {
+  bucket = aws_s3_bucket.www_react_bucket.id
+  policy = <<EOT
+            {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "PublicReadGetObject",
+                  "Effect": "Allow",
+                  "Principal": "*",
+                  "Action": "s3:GetObject",
+                  "Resource": "${aws_s3_bucket.www_react_bucket.arn}/*"
+                }
+              ]
+            }
+EOT
+}
 
 resource "aws_iam_role" "ecs-host-role" {
   name               = "ecs_host_role_prod"
@@ -510,6 +590,242 @@ resource "aws_key_pair" "production" {
 }
 
 ###############
+# S3
+###############
+resource "aws_s3_bucket" "root_react_bucket" {
+  bucket = var.react_bucket_name
+}
+resource "aws_s3_bucket" "www_react_bucket" {
+  bucket = "www.${var.react_bucket_name}"
+}
+
+resource "aws_s3_bucket_cors_configuration" "www_bucket_cors" {
+  bucket = aws_s3_bucket.www_react_bucket.id
+
+  cors_rule {
+    allowed_headers = ["Authorization", "Content-Length"]
+    allowed_methods = ["GET", "POST"]
+    allowed_origins = ["https://www.${var.domain_name}"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+}
+
+resource "aws_s3_bucket_website_configuration" "www_bucket_configuration" {
+  bucket = aws_s3_bucket.www_react_bucket.bucket
+
+  index_document {
+    suffix = var.web_index_document
+  }
+
+  error_document {
+    key = var.web_error_document
+  }
+}
+
+resource "aws_s3_bucket_website_configuration" "root_bucket_configuration" {
+  bucket = aws_s3_bucket.root_react_bucket.bucket
+  redirect_all_requests_to {
+    host_name = "www.${var.domain_name}"
+    protocol  = "https"
+  }
+}
+
+module "website_files" {
+  source = "hashicorp/dir/template"
+
+  base_dir = "${path.module}/${var.web_path}"
+}
+
+resource "aws_s3_object" "static_files" {
+  for_each = module.website_files.files
+
+  bucket       = aws_s3_bucket.www_react_bucket.id
+  key          = each.key
+  content_type = each.value.content_type
+
+  # The template_files module guarantees that only one of these two attributes
+  # will be set for each file, depending on whether it is an in-memory template
+  # rendering result or a static file on disk.
+  source  = each.value.source_path
+  content = each.value.content
+
+  # Unless the bucket has encryption enabled, the ETag of each object is an
+  # MD5 hash of that object.
+  etag = each.value.digests.md5
+}
+
+resource "aws_cloudfront_origin_access_identity" "cloudfront_oia" {
+  comment = "example origin access identify"
+}
+
+resource "aws_cloudfront_distribution" "www_cloudfront_distribution" {
+  enabled         = true
+  is_ipv6_enabled = true
+
+  origin {
+    origin_id   = "S3-www-${aws_s3_bucket.www_react_bucket.id}"
+    domain_name = var.domain_name
+
+    custom_origin_config {
+      http_port              = "80"
+      https_port             = "443"
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1", "TLSv1.1", "TLSv1.2"]
+    }
+  }
+
+  default_root_object = var.web_index_document
+
+  default_cache_behavior {
+    allowed_methods        = ["GET", "HEAD", "DELETE", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods         = ["GET", "HEAD", "OPTIONS"]
+    min_ttl                = "0"
+    default_ttl            = "300"
+    max_ttl                = "1200"
+    target_origin_id       = "S3-www-${aws_s3_bucket.www_react_bucket.id}"
+    viewer_protocol_policy = "redirect-to-https"
+    compress               = true
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+  }
+
+  ordered_cache_behavior {
+    path_pattern     = var.web_index_document
+    allowed_methods  = ["GET", "HEAD", "DELETE", "OPTIONS", "PATCH", "POST", "PUT"]
+    cached_methods   = ["GET", "HEAD", "OPTIONS"]
+    target_origin_id = "S3-www-${aws_s3_bucket.www_react_bucket.id}"
+
+    forwarded_values {
+      query_string = false
+
+      cookies {
+        forward = "none"
+      }
+    }
+
+    min_ttl                = 0
+    default_ttl            = 0
+    max_ttl                = 0
+    compress               = true
+    viewer_protocol_policy = "redirect-to-https"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn      = data.aws_acm_certificate.acm_ssl_certificate.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.1_2016"
+  }
+
+  custom_error_response {
+    error_caching_min_ttl = 300
+    error_code            = 403
+    response_code         = 200
+    response_page_path    = "/${var.web_index_document}"
+  }
+
+  custom_error_response {
+    error_caching_min_ttl = 300
+    error_code            = 404
+    response_code         = 200
+    response_page_path    = "/${var.web_error_document}"
+  }
+}
+
+resource "aws_cloudfront_distribution" "root_cloudfront_distribution" {
+  origin {
+    domain_name = aws_s3_bucket.root_react_bucket.website_endpoint
+    origin_id   = "S3-.${var.react_bucket_name}"
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1", "TLSv1.1", "TLSv1.2"]
+    }
+  }
+
+  enabled         = true
+  is_ipv6_enabled = true
+
+  aliases = [var.domain_name]
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "S3-.${var.react_bucket_name}"
+
+    forwarded_values {
+      query_string = true
+
+      cookies {
+        forward = "none"
+      }
+
+      headers = ["Origin"]
+    }
+
+    viewer_protocol_policy = "allow-all"
+    min_ttl                = 0
+    default_ttl            = 86400
+    max_ttl                = 31536000
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn      = data.aws_acm_certificate.acm_ssl_certificate.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.1_2016"
+  }
+
+  tags = var.common_tags
+}
+
+resource "aws_route53_zone" "main" {
+  name = var.domain_name
+  tags = var.common_tags
+}
+
+resource "aws_route53_record" "root-a" {
+  zone_id = aws_route53_zone.main.zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.root_cloudfront_distribution.domain_name
+    zone_id                = aws_cloudfront_distribution.root_cloudfront_distribution.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "www-a" {
+  zone_id = aws_route53_zone.main.zone_id
+  name    = "www.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.www_cloudfront_distribution.domain_name
+    zone_id                = aws_cloudfront_distribution.www_cloudfront_distribution.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+###############
 # RDS
 ###############
 resource "aws_db_subnet_group" "production" {
@@ -519,7 +835,7 @@ resource "aws_db_subnet_group" "production" {
 
 resource "aws_db_instance" "production" {
   identifier              = "production"
-  name                    = var.rds_db_name
+  db_name                 = var.rds_db_name
   username                = var.rds_username
   password                = var.rds_password
   port                    = "5432"
@@ -540,7 +856,6 @@ resource "aws_db_instance" "production" {
 ###############
 # ECS
 ###############
-
 resource "aws_ecs_cluster" "production" {
   name = "${var.ecs_cluster_name}-cluster"
 }
@@ -557,7 +872,7 @@ resource "aws_launch_configuration" "ecs" {
 }
 
 resource "aws_ecs_task_definition" "app" {
-  family                = "minerva-django"
+  family = "minerva-django"
   container_definitions = templatefile("templates/minerva_django.tftpl", {
     docker_image_url_django = var.docker_image_url_django
     docker_image_url_nginx  = var.docker_image_url_nginx
@@ -606,9 +921,13 @@ resource "aws_autoscaling_group" "ecs-cluster" {
 ###############
 # SSL Certificates
 ###############
-
 data "aws_acm_certificate" "ssl_certificate" {
-  domain = var.domain_name
+  domain   = var.domain_name
+}
+
+data "aws_acm_certificate" "acm_ssl_certificate" {
+  domain   = var.domain_name
+  provider = aws.acm_provider
 }
 
 ######################################
@@ -618,6 +937,10 @@ output "alb_hostname" {
   value = aws_lb.production.dns_name
 }
 
-output "ssl_certificate_arn" {
-  value = data.aws_acm_certificate.ssl_certificate.arn
+output "website_cdn_id" {
+  value = aws_cloudfront_distribution.www_cloudfront_distribution.id
+}
+
+output "website_endpoint" {
+  value = aws_cloudfront_distribution.www_cloudfront_distribution.domain_name
 }

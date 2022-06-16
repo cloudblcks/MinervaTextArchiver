@@ -7,8 +7,7 @@ WORKDIR /app
 
 # install app dependencies
 COPY package.json package-lock.json /app/
-RUN npm install \
-    && npm install react-scripts@3.4.1 -g --silent
+RUN npm install
 # add app
 
 COPY . /app
